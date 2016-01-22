@@ -6,7 +6,7 @@ use Monitoring::Plugin::Threshold;
 use LWP::UserAgent;
 use Data::Dumper;
 
-our $VERSION = '1.0.0';
+our $VERSION = '1.0.1';
 
 our ( $plugin, $option );
 
@@ -57,19 +57,23 @@ $options->arg(
   required => 0,
 );
 
-$options->arg(
-  spec     => 'threshold=s',
-  help     => 'set threshold for slots (default), busy or idle',
-  required => 0,
-  default  => 'slots',
-);
-
 $options->getopts();
 alarm $options->timeout;
 
-$threshold = Monitoring::Plugin::Threshold->set_thresholds(
-  warning  => $options->warning,
-  critical => $options->critical,
+my @warning = split(",", $options->warning);
+my @critical = split(",", $options->critical);
+
+$threshold_OpenSlots = Monitoring::Plugin::Threshold->set_thresholds(
+  warning  => $warning[0],
+  critical => $critical[0],
+);
+$threshold_BusyWorkers = Monitoring::Plugin::Threshold->set_thresholds(
+  warning  => $warning[1],
+  critical => $critical[1],
+);
+$threshold_IdleWorkers = Monitoring::Plugin::Threshold->set_thresholds(
+  warning  => $warning[2],
+  critical => $critical[2],
 );
 
 my $ua = LWP::UserAgent->new( protocols_allowed => ['http','https'], timeout => 15);
@@ -97,55 +101,39 @@ if ($response->is_success) {
 
   $output = 'OpenSlots:'.$OpenSlots.' BusyWorkers:'.$BusyWorkers.' IdleWorkers:'.$IdleWorkers;
 
-  if ($options->threshold =~ /slots/) {
-    $plugin->add_perfdata(
-      label => 'OpenSlots',
-      value => $OpenSlots,
-      uom   => q{},
-      threshold => $threshold,
-    );
-    $status = $OpenSlots;
-  } else {
-    $plugin->add_perfdata(
-      label => 'OpenSlots',
-      value => $OpenSlots,
-      uom   => q{},
-    );
+  $plugin->add_perfdata(
+    label => 'OpenSlots',
+    value => $OpenSlots,
+    uom   => q{},
+    threshold => $threshold_OpenSlots,
+  );
+  $plugin->add_perfdata(
+    label => 'BusyWorkers',
+    value => $BusyWorkers,
+    uom   => q{},
+    threshold => $threshold_BusyWorkers,
+  );
+  $plugin->add_perfdata(
+    label => 'IdleWorkers',
+    value => $IdleWorkers,
+    uom   => q{},
+    threshold => $threshold_IdleWorkers,
+  );
+
+  my @thresholds = (
+    $threshold_OpenSlots->get_status($OpenSlots),
+    $threshold_BusyWorkers->get_status($BusyWorkers),
+    $threshold_IdleWorkers->get_status($IdleWorkers)
+  );
+
+  my $status = 0;
+  foreach(@thresholds) {
+    if ($_ > $status) {
+      $status = $_;
+    }
   }
 
-  if ($options->threshold =~ /busy/) {
-    $plugin->add_perfdata(
-      label => 'BusyWorkers',
-      value => $BusyWorkers,
-      uom   => q{},
-      threshold => $threshold,
-    );
-    $status = $BusyWorkers;
-  } else {
-    $plugin->add_perfdata(
-      label => 'BusyWorkers',
-      value => $BusyWorkers,
-      uom   => q{},
-    );
-  }
-
-  if ($options->threshold =~ /idle/) {
-    $plugin->add_perfdata(
-      label => 'IdleWorkers',
-      value => $IdleWorkers,
-      uom   => q{},
-      threshold => $threshold,
-    );
-    $status = $IdleWorkers;
-  } else {
-    $plugin->add_perfdata(
-      label => 'IdleWorkers',
-      value => $IdleWorkers,
-      uom   => q{},
-    );
-  }
-
-  $plugin->nagios_exit( $threshold->get_status($status), $output );
+  $plugin->nagios_exit( $status, $output );
 
 } else {
 
