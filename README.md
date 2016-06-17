@@ -1,0 +1,3 @@
+# Monitoring Plugins
+
+check_apache_status moved to its own repository https://github.com/lbetz/check_apache_status...
